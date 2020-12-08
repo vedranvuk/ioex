@@ -13,11 +13,12 @@ import (
 // If the file does not exist it is created.
 // If an error occurs it is returned.
 func Touch(filename string) error {
+	var err error
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(filename, os.O_CREATE, 0644)
-	if err != nil {
+	var file *os.File
+	if file, err = os.OpenFile(filename, os.O_CREATE, 0644); err != nil {
 		return err
 	}
 	return file.Close()
@@ -34,63 +35,60 @@ func Touch(filename string) error {
 //
 // If any other error occurs is returned and it will be of type *os.PathError.
 func CopyAll(destination, source string, overwrite bool) error {
-
-	srcfi, err := os.Stat(source)
-	if err != nil {
+	var err error
+	// Get source info.
+	var srcinfo os.FileInfo
+	if srcinfo, err = os.Stat(source); err != nil {
 		return err
 	}
-
-	src, err := os.OpenFile(source, os.O_RDONLY, srcfi.Mode().Perm())
-	if err != nil {
+	// Open source.
+	var srcfile *os.File
+	if srcfile, err = os.OpenFile(source, os.O_RDONLY, srcinfo.Mode().Perm()); err != nil {
 		return err
 	}
-
 	// Source is file. Copy and return.
-	if !srcfi.IsDir() {
-		flags := os.O_WRONLY | os.O_CREATE
+	if !srcinfo.IsDir() {
+		var flags = os.O_WRONLY | os.O_CREATE
 		if !overwrite {
 			flags = flags | os.O_EXCL
 		}
-		dst, err := os.OpenFile(destination, flags, srcfi.Mode().Perm())
-		if err != nil {
-			src.Close()
+		var dstfile *os.File
+		if dstfile, err = os.OpenFile(destination, flags, srcinfo.Mode().Perm()); err != nil {
+			srcfile.Close()
 			return err
 		}
-		if _, err := io.Copy(dst, src); err != nil {
-			src.Close()
-			dst.Close()
+		if _, err = io.Copy(dstfile, srcfile); err != nil {
+			srcfile.Close()
+			dstfile.Close()
 			return err
 		}
-		src.Close()
-		dst.Close()
+		srcfile.Close()
+		dstfile.Close()
 		return nil
 	}
-
 	// Create destination directory.
-	if _, err := os.Stat(destination); err != nil {
+	if _, err = os.Stat(destination); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := os.Mkdir(destination, srcfi.Mode().Perm()); err != nil {
-			src.Close()
+		if err = os.Mkdir(destination, srcinfo.Mode().Perm()); err != nil {
+			srcfile.Close()
 			return err
 		}
 	}
-
 	// Enumerate files.
-	infos, err := src.Readdir(-1)
-	if err != nil {
-		src.Close()
+	var infos []os.FileInfo
+	if infos, err = srcfile.Readdir(-1); err != nil {
+		srcfile.Close()
 		return err
 	}
-	src.Close()
-
+	srcfile.Close()
 	sort.Slice(infos, func(i, j int) bool {
 		return infos[i].Name() < infos[j].Name()
 	})
-
 	// Recurse.
-	for _, info := range infos {
+	var info os.FileInfo
+	for _, info = range infos {
 		if err := CopyAll(
 			filepath.Join(destination, info.Name()),
 			filepath.Join(source, info.Name()),
@@ -99,6 +97,5 @@ func CopyAll(destination, source string, overwrite bool) error {
 			return err
 		}
 	}
-
 	return nil
 }
