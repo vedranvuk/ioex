@@ -8,6 +8,19 @@ import (
 	"sort"
 )
 
+// Exists returns if the file specified by filename exists.
+// If an error occurs it is returned and the exists result is invalid.
+func Exists(filename string) (bool, error) {
+	var err error
+	if _, err = os.Stat(filename); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // Touch updates access and modification times of specified file.
 // It creates any required directories along the optionally specified path.
 // If the file does not exist it is created.
