@@ -1,11 +1,10 @@
 package ioex
 
 import (
-	"errors"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
 // Exists returns if the file specified by filename exists.
@@ -37,12 +36,16 @@ func Touch(filename string) error {
 	return file.Close()
 }
 
-// CopyAll copies a source file or a directory to destination and does it
-// recursively. Directories along the destination path(s) are created as needed.
-// Files are copied using io.Copy.
+// CopyAll copies from source to destination where destination must be a 
+// directory and source can be a file or a directory. if it is a file it is 
+// copied to destination. If it is a directory it is enumerated and all its
+// children are copied to destination.
+//
+// Destinations are created as needed. Symbolic links are skipped silently.
+// Trying to copy a symbolic link returns a nil error.
 //
 // If overwrite is specified it silently overwrites existing destination files,
-// otherwise returns an os.Exists.
+// otherwise returns an os.Exists mid operation with incomplete copy results.
 //
 // Permissions of source files and directories carry over to destinations.
 //
@@ -51,55 +54,63 @@ func CopyAll(destination, source string, overwrite bool) error {
 	var err error
 	// Get source info.
 	var srcinfo os.FileInfo
-	if srcinfo, err = os.Stat(source); err != nil {
+	if srcinfo, err = os.Lstat(source); err != nil {
 		return err
 	}
-	// Open source.
-	var srcfile *os.File
-	if srcfile, err = os.OpenFile(source, os.O_RDONLY, srcinfo.Mode().Perm()); err != nil {
-		return err
+	if srcinfo.Mode()&os.ModeSymlink != 0 {
+		return nil // Skip symlinks.
 	}
 	// Source is file. Copy and return.
 	if !srcinfo.IsDir() {
+		// Ensure destination exists and is a directory.
+		var dstinfo os.FileInfo
+		if dstinfo, err = os.Lstat(destination); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+			if dstinfo, err = os.Lstat(filepath.Dir(source)); err != nil {
+				return err
+			}
+			if err = os.MkdirAll(destination, dstinfo.Mode().Perm()); err != nil {
+				return err
+			}
+			if dstinfo, err = os.Lstat(destination); err != nil {
+				return err
+			}
+		}
+		if !dstinfo.IsDir() {
+			return os.ErrExist
+		}
+		// Open source file.
+		var srcfile *os.File
+		if srcfile, err = os.OpenFile(source, os.O_RDONLY, srcinfo.Mode().Perm()); err != nil {
+			return err
+		}
+		defer srcfile.Close()
+		// Open destination file.
 		var flags = os.O_WRONLY | os.O_CREATE
 		if !overwrite {
 			flags = flags | os.O_EXCL
 		}
 		var dstfile *os.File
-		if dstfile, err = os.OpenFile(destination, flags, srcinfo.Mode().Perm()); err != nil {
-			srcfile.Close()
+		if dstfile, err = os.OpenFile(
+			filepath.Join(destination, filepath.Base(source)),
+			flags,
+			srcinfo.Mode().Perm(),
+		); err != nil {
 			return err
 		}
+		defer dstfile.Close()
+		// Copy source to dest.
 		if _, err = io.Copy(dstfile, srcfile); err != nil {
-			srcfile.Close()
-			dstfile.Close()
 			return err
 		}
-		srcfile.Close()
-		dstfile.Close()
 		return nil
 	}
-	// Create destination directory.
-	if _, err = os.Stat(destination); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err = os.Mkdir(destination, srcinfo.Mode().Perm()); err != nil {
-			srcfile.Close()
-			return err
-		}
-	}
-	// Enumerate files.
 	var infos []os.FileInfo
-	if infos, err = srcfile.Readdir(-1); err != nil {
-		srcfile.Close()
+	if infos, err = ioutil.ReadDir(source); err != nil {
 		return err
 	}
-	srcfile.Close()
-	sort.Slice(infos, func(i, j int) bool {
-		return infos[i].Name() < infos[j].Name()
-	})
-	// Recurse.
 	var info os.FileInfo
 	for _, info = range infos {
 		if err := CopyAll(

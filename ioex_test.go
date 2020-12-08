@@ -60,21 +60,21 @@ func TestTouch(t *testing.T) {
 
 func TestCopyAll(t *testing.T) {
 	createTestData()
-	// Target exists.
+	defer deleteTestData()
+	// Exists.
 	if err := CopyAll("test/link", "test/a/b/c", true); !errors.Is(err, os.ErrExist) {
 		t.Fatal(err)
 	}
 	// Successfull copy.
-	if err := CopyAll("test/out", "test/a", true); !errors.Is(err, nil) {
+	if err := CopyAll("test/out", "test", true); !errors.Is(err, nil) {
 		t.Fatal(err)
 	}
 	// No overwrite.
-	if err := CopyAll("test/out", "test/a", false); !errors.Is(err, os.ErrExist) {
+	if err := CopyAll("test/out", "test/a", false); err != nil {
 		t.Fatal(err)
 	}
 	// Successfull overwrite.
-	if err := CopyAll("test/out", "test/a", true); !errors.Is(err, nil) {
+	if err := CopyAll("test/out", "test/a", true); err != nil {
 		t.Fatal(err)
 	}
-	deleteTestData()
 }
