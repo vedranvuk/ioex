@@ -77,4 +77,8 @@ func TestCopyAll(t *testing.T) {
 	if err := CopyAll("test/out", "test/a", true); err != nil {
 		t.Fatal(err)
 	}
+	// Unsuccessfull overwrite overwrite.
+	if err := CopyAll("test/out", "test/a", false); !os.IsExist(err) {
+		t.Fatal("Fail")
+	}
 }
